@@ -1,7 +1,7 @@
 image:
   file: .gitpod.Dockerfile
 
-# Example tasks to build debug/release APKs
+# Example tasks you might run once Gitpod is up:
 tasks:
   - name: Build Debug APK
     command: ./gradlew assembleDebug
