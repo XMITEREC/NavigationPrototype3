@@ -1,3 +1,11 @@
-<resources>
+<?xml version="1.0" encoding="utf-8"?>
+<resources xmlns:tools="http://schemas.android.com/tools">
+
     <string name="app_name">NavigationPrototype3</string>
+
+    <!-- OSMDroid override to fix "Multiple substitutions" warning -->
+    <string name="cacheManagerHandlingMessage" tools:replace="cacheManagerHandlingMessage" formatted="false">
+        Updating: %s
+    </string>
+
 </resources>

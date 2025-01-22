@@ -1,3 +1,4 @@
+@file:OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 package com.example.navigationprototype3
 
 import android.Manifest
@@ -15,8 +16,6 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.rememberCoroutineScope
@@ -76,7 +75,7 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             Navigationprototype3Theme {
-                // CHANGED: Add a custom topBar with black background & loriii.png
+                // We are using experimental APIs like Scaffold & TopAppBar from Material 3
                 Scaffold(
                     topBar = { MyTopBar() }
                 ) { innerPadding ->
@@ -122,20 +121,19 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    // ------------------------------------------------------------------
-    // MY TOP BAR (custom)
-    // ------------------------------------------------------------------
+    /**
+     * A composable Top Bar with loriii.png centered.
+     * Marked experimental because Material3 TopAppBar is still under @ExperimentalMaterial3Api.
+     */
     @Composable
     fun MyTopBar() {
-        // We'll use a Material 3 TopAppBar
         TopAppBar(
             title = {
-                // Center the image horizontally
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.Center
                 ) {
-                    // CHANGED: use loriii.png in drawable
+                    // Replace R.drawable.loriii with your actual drawable if needed
                     Image(
                         painter = painterResource(id = R.drawable.loriii),
                         contentDescription = "App Logo",
@@ -150,9 +148,9 @@ class MainActivity : ComponentActivity() {
         )
     }
 
-    // ------------------------------------------------------------------
-    // 3D Button
-    // ------------------------------------------------------------------
+    /**
+     * A simple 3D-like button using a gradient background and shadow.
+     */
     @Composable
     fun ThreeDButton(
         text: String,
@@ -179,9 +177,6 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    // ------------------------------------------------------------------
-    // MAP COMPOSABLE
-    // ------------------------------------------------------------------
     @Composable
     fun MyMapView(
         modifier: Modifier = Modifier,
@@ -243,15 +238,17 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    /**
+     * Fetch a single fresh location from FusedLocationProviderClient (coroutines-play-services).
+     * We do not forcibly enable GPS, only prompt user if off.
+     */
     private suspend fun fetchUserLocationOnce() = withContext(Dispatchers.IO) {
         if (ActivityCompat.checkSelfPermission(
                 this@MainActivity, Manifest.permission.ACCESS_FINE_LOCATION
             ) == PackageManager.PERMISSION_GRANTED
         ) {
             val fusedClient = LocationServices.getFusedLocationProviderClient(this@MainActivity)
-            val loc = fusedClient
-                .getCurrentLocation(Priority.PRIORITY_HIGH_ACCURACY, null)
-                .await()
+            val loc = fusedClient.getCurrentLocation(Priority.PRIORITY_HIGH_ACCURACY, null).await()
 
             loc?.let {
                 currentLat = it.latitude
@@ -260,23 +257,24 @@ class MainActivity : ComponentActivity() {
             }
         }
 
+        // Update map on main thread
         withContext(Dispatchers.Main) {
             updateMapMarker(currentLat, currentLon, "You are here")
         }
     }
 
     // ------------------------------------------------------------------
-    // NAVIGATION: START/STOP
+    // NAVIGATION: START/STOP, SENSORS & WEBSOCKET
     // ------------------------------------------------------------------
     private fun startNavigation() {
-        // Start sensor service
+        // 1) Start sensor service
         val intent = Intent(this, SensorService::class.java)
         startService(intent)
 
-        // Open WebSocket
+        // 2) Open WebSocket
         openWebSocket()
 
-        // Start a coroutine to send data every 4s
+        // 3) Start a coroutine to send data every 4s
         dataJob = CoroutineScope(Dispatchers.IO).launch {
             while (isActive) {
                 delay(4000)
@@ -286,7 +284,10 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun stopNavigation() {
+        // Stop sensor service
         stopService(Intent(this, SensorService::class.java))
+
+        // Cancel data job
         dataJob?.cancel()
         dataJob = null
 
@@ -359,16 +360,20 @@ class MainActivity : ComponentActivity() {
         Log.d("WS", "Sent sensor data => #samples=${dataList.size}, heading=$heading")
     }
 
+    // ------------------------------------------------------------------
+    // HANDLE INCOMING SPEED => UPDATE LOCATION
+    // ------------------------------------------------------------------
     private fun handleIncomingSpeed(jsonStr: String) {
         try {
             val json = JSONObject(jsonStr)
             if (!json.has("avg_speed")) return
-            val avgSpeed = json.getDouble("avg_speed") // m/s
+            val avgSpeed = json.getDouble("avg_speed") // in m/s
 
-            // 4s interval
+            // Our data interval is 4s
             val timeSec = 4.0
             val dist = avgSpeed * timeSec
 
+            // We'll take the last heading from SensorService
             val headingDeg = SensorService.sensorData.getLatestHeading()
             val headingRad = Math.toRadians(headingDeg.toDouble())
 

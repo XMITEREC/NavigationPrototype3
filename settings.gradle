@@ -1,16 +1,23 @@
-// settings.gradle (sample)
 pluginManagement {
     repositories {
-        gradlePluginPortal()
+        // Required so Gradle can find AGP & Kotlin plugins
         google()
         mavenCentral()
+        gradlePluginPortal()
+    }
+    // Declare plugin versions here
+    plugins {
+        id "com.android.application" version "8.0.2"
+        id "org.jetbrains.kotlin.android" version "1.8.21"
     }
 }
+
 dependencyResolutionManagement {
     repositories {
         google()
         mavenCentral()
     }
 }
+
 rootProject.name = "NavigationPrototype3"
 include(":app")

@@ -1,13 +1,16 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+<?xml version="1.0" encoding="utf-8"?>
+<manifest
+    xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools"
-    package="com.example.navigationprototype3">
-
-    <uses-permission android:name="android.permission.INTERNET" />
-    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    >
+    
+    <!-- Permissions -->
+    <uses-permission android:name="android.permission.INTERNET"/>
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
     <uses-permission
         android:name="android.permission.ACCESS_COARSE_LOCATION"
         tools:ignore="MissingClass" />
-
+        
     <application
         android:label="@string/app_name"
         android:icon="@mipmap/ic_launcher"
@@ -17,18 +20,16 @@
 
         <activity
             android:name=".MainActivity"
-            android:exported="true"
-            tools:ignore="MissingClass">
-
+            android:exported="true">
             <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.LAUNCHER" />
+                <action android:name="android.intent.action.MAIN"/>
+                <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
         </activity>
 
         <service
             android:name=".SensorService"
-            android:exported="false" />
-
+            android:exported="false"/>
+        
     </application>
 </manifest>
