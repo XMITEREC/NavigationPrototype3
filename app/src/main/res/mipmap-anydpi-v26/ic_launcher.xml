@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- If you want the same image for background and foreground: -->
+    <background android:drawable="@drawable/logomini" />
+    <foreground android:drawable="@drawable/logomini" />
+    <monochrome android:drawable="@drawable/logomini" />
+</adaptive-icon>

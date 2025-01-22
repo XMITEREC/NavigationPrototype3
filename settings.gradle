@@ -1,0 +1,16 @@
+// settings.gradle (sample)
+pluginManagement {
+    repositories {
+        gradlePluginPortal()
+        google()
+        mavenCentral()
+    }
+}
+dependencyResolutionManagement {
+    repositories {
+        google()
+        mavenCentral()
+    }
+}
+rootProject.name = "NavigationPrototype3"
+include(":app")

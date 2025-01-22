@@ -1,0 +1,10 @@
+image:
+  file: .gitpod.Dockerfile
+
+# Example tasks to build debug/release APKs
+tasks:
+  - name: Build Debug APK
+    command: ./gradlew assembleDebug
+
+  - name: Build Release APK
+    command: ./gradlew assembleRelease
