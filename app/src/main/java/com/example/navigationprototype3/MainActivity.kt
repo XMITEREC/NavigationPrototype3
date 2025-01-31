@@ -123,7 +123,6 @@ class MainActivity : ComponentActivity() {
 
     /**
      * A composable Top Bar with loriii.png centered.
-     * Marked experimental because Material3 TopAppBar is still under @ExperimentalMaterial3Api.
      */
     @Composable
     fun MyTopBar() {
@@ -133,7 +132,6 @@ class MainActivity : ComponentActivity() {
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.Center
                 ) {
-                    // Replace R.drawable.loriii with your actual drawable if needed
                     Image(
                         painter = painterResource(id = R.drawable.loriii),
                         contentDescription = "App Logo",
@@ -240,7 +238,6 @@ class MainActivity : ComponentActivity() {
 
     /**
      * Fetch a single fresh location from FusedLocationProviderClient (coroutines-play-services).
-     * We do not forcibly enable GPS, only prompt user if off.
      */
     private suspend fun fetchUserLocationOnce() = withContext(Dispatchers.IO) {
         if (ActivityCompat.checkSelfPermission(
@@ -274,10 +271,10 @@ class MainActivity : ComponentActivity() {
         // 2) Open WebSocket
         openWebSocket()
 
-        // 3) Start a coroutine to send data every 4s
+        // 3) Start a coroutine to send data every 2s
         dataJob = CoroutineScope(Dispatchers.IO).launch {
             while (isActive) {
-                delay(4000)
+                delay(2000)
                 sendSensorData()
             }
         }
@@ -361,7 +358,7 @@ class MainActivity : ComponentActivity() {
     }
 
     // ------------------------------------------------------------------
-    // HANDLE INCOMING SPEED => UPDATE LOCATION
+    // HANDLE INCOMING SPEED => UPDATE LOCATION (DRIFT FIX APPLIED HERE)
     // ------------------------------------------------------------------
     private fun handleIncomingSpeed(jsonStr: String) {
         try {
@@ -370,13 +367,14 @@ class MainActivity : ComponentActivity() {
             val avgSpeed = json.getDouble("avg_speed") // in m/s
 
             // Our data interval is 4s
-            val timeSec = 4.0
+            val timeSec = 2.0
             val dist = avgSpeed * timeSec
 
             // We'll take the last heading from SensorService
             val headingDeg = SensorService.sensorData.getLatestHeading()
             val headingRad = Math.toRadians(headingDeg.toDouble())
 
+            // Dead-reckoning update
             val earthRadius = 6371000.0
             val deltaLat = dist * cos(headingRad) / earthRadius
             val deltaLon = dist * sin(headingRad) / (earthRadius * cos(Math.toRadians(currentLat)))
@@ -384,11 +382,64 @@ class MainActivity : ComponentActivity() {
             currentLat += Math.toDegrees(deltaLat)
             currentLon += Math.toDegrees(deltaLon)
 
-            runOnUiThread {
-                updateMapMarker(currentLat, currentLon, "Moving..")
+            // Snap to nearest road using OSRM in a background coroutine
+            CoroutineScope(Dispatchers.IO).launch {
+                val snapped = snapToNearestRoadWithOSRM(currentLat, currentLon)
+                if (snapped != null) {
+                    currentLat = snapped.first
+                    currentLon = snapped.second
+                }
+                // Update map on the main thread
+                withContext(Dispatchers.Main) {
+                    updateMapMarker(currentLat, currentLon, "Moving..")
+                }
             }
+
         } catch (e: Exception) {
             Log.e("WS", "handleIncomingSpeed parse error: $e")
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // SNAP TO OSRM (PUBLIC DEMO SERVER)
+    // ------------------------------------------------------------------
+    /**
+     * Calls OSRM's "Nearest" service to snap (lat,lon) to the nearest road.
+     * If successful, returns (snappedLat, snappedLon), else null.
+     *
+     * Docs: https://github.com/Project-OSRM/osrm-backend/blob/master/docs/http.md#nearest-service
+     */
+    private suspend fun snapToNearestRoadWithOSRM(
+        lat: Double,
+        lon: Double
+    ): Pair<Double, Double>? = withContext(Dispatchers.IO) {
+        try {
+            // Example endpoint: https://router.project-osrm.org/nearest/v1/driving/{lon},{lat}?number=1
+            val url = "https://router.project-osrm.org/nearest/v1/driving/$lon,$lat?number=1"
+
+            val client = okHttpClient ?: OkHttpClient.Builder().build()
+            val request = Request.Builder().url(url).build()
+            val response = client.newCall(request).execute()
+            val body = response.body?.string() ?: return@withContext null
+
+            val json = JSONObject(body)
+            if (!json.has("waypoints")) return@withContext null
+
+            val waypoints = json.getJSONArray("waypoints")
+            if (waypoints.length() == 0) return@withContext null
+
+            val firstWaypoint = waypoints.getJSONObject(0)
+            val locationArray = firstWaypoint.getJSONArray("location")
+
+            // OSRM returns [lon, lat]
+            val snappedLon = locationArray.getDouble(0)
+            val snappedLat = locationArray.getDouble(1)
+
+            return@withContext Pair(snappedLat, snappedLon)
+
+        } catch (e: Exception) {
+            Log.e("WS", "Error snapping to road: ${e.message}")
+            null
         }
     }
 
