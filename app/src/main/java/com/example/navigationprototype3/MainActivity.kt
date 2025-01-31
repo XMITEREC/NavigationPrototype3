@@ -17,8 +17,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -49,20 +48,41 @@ class MainActivity : ComponentActivity() {
 
     private val LOCATION_PERMISSION_REQUEST = 100
 
+    // OSMDroid map
     private var mapView: MapView? = null
+
+    // Current lat/lon
     private var currentLat = 48.8583
     private var currentLon = 2.2944
 
+    // Keep track of total distance traveled (in meters)
+    private var totalDistanceTraveled = 0.0
+
+    // OkHttp + WebSocket
     private var okHttpClient: OkHttpClient? = null
     private var webSocket: WebSocket? = null
 
+    // Coroutine job to send sensor data periodically
     private var dataJob: Job? = null
 
+    // Location settings launcher
     private val locationSettingsLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
     ) { result: ActivityResult ->
         Log.d("MainActivity", "Returned from Location Settings.")
     }
+
+    // ----------------------------------------------------------------------
+    // Compose states for the UI stats bar (speed, distance, activity)
+    // ----------------------------------------------------------------------
+    // Speed from WebSocket (m/s)
+    private val currentSpeedState = mutableStateOf(0.0)
+
+    // Summation of all traveled distance (m)
+    private val totalDistanceState = mutableStateOf(0.0)
+
+    // Simple logic: standing, walking, biking, driving
+    private val activityStatusState = mutableStateOf("Unknown")
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -79,22 +99,37 @@ class MainActivity : ComponentActivity() {
                 Scaffold(
                     topBar = { MyTopBar() }
                 ) { innerPadding ->
-                    Box(
+                    // Main content layout
+                    Column(
                         modifier = Modifier
                             .fillMaxSize()
                             .padding(innerPadding)
                     ) {
-                        // OSMDroid map
-                        MyMapView(
-                            modifier = Modifier.fillMaxSize(),
-                            onMapReady = { mv -> mapView = mv }
+                        // 1) Stats bar (black background) => speed, distance, activity
+                        StatsBar(
+                            speed = currentSpeedState.value,
+                            distance = totalDistanceState.value,
+                            activityStatus = activityStatusState.value
                         )
 
-                        // UI Buttons at bottom
+                        // 2) Map => smaller (400.dp height)
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(400.dp)
+                        ) {
+                            MyMapView(
+                                modifier = Modifier.fillMaxSize(),
+                                onMapReady = { mv -> mapView = mv }
+                            )
+                        }
+
+                        // 3) Navigation buttons at bottom
+                        //    Center them horizontally and add some vertical padding
                         Column(
                             modifier = Modifier
-                                .align(Alignment.BottomCenter)
-                                .padding(bottom = 16.dp),
+                                .fillMaxWidth()
+                                .padding(vertical = 16.dp),
                             horizontalAlignment = Alignment.CenterHorizontally
                         ) {
                             val coroutineScope = rememberCoroutineScope()
@@ -108,7 +143,7 @@ class MainActivity : ComponentActivity() {
                                 }
                             }
 
-                            Spacer(modifier = Modifier.height(8.dp))
+                            Spacer(modifier = Modifier.height(12.dp))
 
                             // Stop Nav
                             ThreeDButton(text = "Stop Navigation") {
@@ -121,6 +156,9 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    // ------------------------------------------------------------------
+    // COMPOSABLES
+    // ------------------------------------------------------------------
     /**
      * A composable Top Bar with loriii.png centered.
      */
@@ -147,7 +185,40 @@ class MainActivity : ComponentActivity() {
     }
 
     /**
-     * A simple 3D-like button using a gradient background and shadow.
+     * Shows speed, distance, and user activity in a black bar with white text.
+     */
+    @Composable
+    fun StatsBar(
+        speed: Double,
+        distance: Double,
+        activityStatus: String
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(Color.Black)
+                .padding(16.dp)
+        ) {
+            Column {
+                Text(
+                    text = "Current Speed: %.2f m/s".format(speed),
+                    color = Color.White
+                )
+                Text(
+                    text = "Distance Covered: %.2f m".format(distance),
+                    color = Color.White
+                )
+                Text(
+                    text = "Activity: $activityStatus",
+                    color = Color.White
+                )
+            }
+        }
+    }
+
+    /**
+     * A "glassy blue" 3D-like button using a vertical gradient background and shadow.
+     * Made bigger (extra padding).
      */
     @Composable
     fun ThreeDButton(
@@ -155,7 +226,7 @@ class MainActivity : ComponentActivity() {
         onClick: () -> Unit
     ) {
         val gradient = Brush.verticalGradient(
-            colors = listOf(Color(0xFFEEEEEE), Color(0xFFAAAAAA))
+            colors = listOf(Color(0xFF99CCFF), Color(0xFF66B2FF))  // Glassy blue
         )
 
         Button(
@@ -169,12 +240,16 @@ class MainActivity : ComponentActivity() {
         ) {
             Text(
                 text = text,
-                modifier = Modifier.padding(vertical = 8.dp, horizontal = 16.dp),
-                color = Color.Black
+                modifier = Modifier.padding(vertical = 16.dp, horizontal = 24.dp),
+                color = Color.White,
+                style = MaterialTheme.typography.titleMedium
             )
         }
     }
 
+    /**
+     * Displays an OSMDroid MapView in Jetpack Compose.
+     */
     @Composable
     fun MyMapView(
         modifier: Modifier = Modifier,
@@ -271,10 +346,10 @@ class MainActivity : ComponentActivity() {
         // 2) Open WebSocket
         openWebSocket()
 
-        // 3) Start a coroutine to send data every 2s
+        // 3) Start a coroutine to send data every 4s
         dataJob = CoroutineScope(Dispatchers.IO).launch {
             while (isActive) {
-                delay(2000)
+                delay(4000)
                 sendSensorData()
             }
         }
@@ -358,7 +433,7 @@ class MainActivity : ComponentActivity() {
     }
 
     // ------------------------------------------------------------------
-    // HANDLE INCOMING SPEED => UPDATE LOCATION (DRIFT FIX APPLIED HERE)
+    // HANDLE INCOMING SPEED => UPDATE LOCATION (DRIFT FIX)
     // ------------------------------------------------------------------
     private fun handleIncomingSpeed(jsonStr: String) {
         try {
@@ -366,8 +441,11 @@ class MainActivity : ComponentActivity() {
             if (!json.has("avg_speed")) return
             val avgSpeed = json.getDouble("avg_speed") // in m/s
 
+            // Update the Compose state for current speed
+            currentSpeedState.value = avgSpeed
+
             // Our data interval is 4s
-            val timeSec = 2.0
+            val timeSec = 4.0
             val dist = avgSpeed * timeSec
 
             // We'll take the last heading from SensorService
@@ -382,6 +460,18 @@ class MainActivity : ComponentActivity() {
             currentLat += Math.toDegrees(deltaLat)
             currentLon += Math.toDegrees(deltaLon)
 
+            // Track total distance
+            totalDistanceTraveled += dist
+            totalDistanceState.value = totalDistanceTraveled
+
+            // Simple activity logic
+            activityStatusState.value = when {
+                avgSpeed < 1.0 -> "Standing"
+                avgSpeed < 3.0 -> "Walking"
+                avgSpeed < 8.0 -> "Biking"
+                else           -> "Driving"
+            }
+
             // Snap to nearest road using OSRM in a background coroutine
             CoroutineScope(Dispatchers.IO).launch {
                 val snapped = snapToNearestRoadWithOSRM(currentLat, currentLon)
@@ -389,7 +479,7 @@ class MainActivity : ComponentActivity() {
                     currentLat = snapped.first
                     currentLon = snapped.second
                 }
-                // Update map on the main thread
+                // Update map marker on main thread
                 withContext(Dispatchers.Main) {
                     updateMapMarker(currentLat, currentLon, "Moving..")
                 }
@@ -414,7 +504,7 @@ class MainActivity : ComponentActivity() {
         lon: Double
     ): Pair<Double, Double>? = withContext(Dispatchers.IO) {
         try {
-            // Example endpoint: https://router.project-osrm.org/nearest/v1/driving/{lon},{lat}?number=1
+            // Example: https://router.project-osrm.org/nearest/v1/driving/{lon},{lat}?number=1
             val url = "https://router.project-osrm.org/nearest/v1/driving/$lon,$lat?number=1"
 
             val client = okHttpClient ?: OkHttpClient.Builder().build()
